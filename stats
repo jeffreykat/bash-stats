@@ -1,0 +1,143 @@
+#!/bin/bash
+
+#By: Katherine Jeffrey
+arg1=$1 #first stdin arg
+arg2="./arg2"
+num="./num"
+file="./file"
+output="./output"
+trap "rm -f $output; rm -f $file; rm -f $num; rm -f $arg2; echo 'error, exiting'; exit 1" INT HUP TERM
+numrow=0
+numcol=0
+sum=0
+
+#Sets number of rows
+count_rows () {
+   while read line
+   do
+      numrow=$(expr $numrow + 1)
+   done < $1
+}
+
+#Sets number of columns
+count_cols () {
+   a=$(wc $1)
+   numcol=$(echo $a | cut -d ' ' -f2)
+   numcol=$(expr $numcol / $numrow)
+}
+
+#adds col, puts average in output
+average () {
+   local sum=0
+   while read line
+   do
+      sum=$(expr $sum + $line)
+   done < $1
+   div=$(expr $2 / 2 )
+   div=$(expr $div + $sum)
+   sum=$(expr $div / $2 )
+   echo -e -n "$sum\t" >> $output
+}
+
+#sort row, put med in output
+row_med () { 
+   mid=$(expr $numcol / 2)
+   cat $1 | sort -n > $num
+   cat $num | tr '\n' '\t' > $file
+   cut -f $(expr $mid + 1) $file >> $output
+}
+
+#turns rows to cols and sends to average
+calc_rows () {
+   rm -f $file #clear file
+   while read -r line
+   do
+      for word in $line
+      do
+	 echo -e "$word" >> $file
+      done
+      average $file $numcol
+      row_med $file
+      rm -f $file #clear file
+   done < $1
+}
+
+#send each col to average
+calc_cols () {
+   rm -f $num #clear file
+   for (( i=1; i<=$numcol; i++ ))
+   do
+      cut -f $i $arg2 >> $num
+      average $num $numrow
+      rm -f $num #clear file
+   done
+}
+
+#sorts each col and puts med in output
+col_med () {
+   echo "Medians:" >> $output
+   mid=$(expr $numrow / 2)
+   for (( i=1; i<=$numcol; i++ ))
+   do
+      cut -f $i $arg2 > $num
+      cat $num | sort -n > $file #sort -n for numerical
+      cat $file | tr '\n' '\t' > $num
+      rm -f $file #clear file
+      if [[ $(expr $numrow % 2) -eq 0 ]] #checks for even number
+      then
+	 cut -f $(expr $mid + 1) $num >> $file
+      else
+	 cut -f $mid $num >> $file
+      fi
+      cat $file | tr '\n' '\t' >> $output
+   done
+   echo "" >> $output
+}
+
+#checks if file is there and valid
+   arg2="datafile$$"
+   if [[ "$#" = "1" ]]
+   then
+      cat > "$arg2"
+   elif [[ "$#" = "2" ]]
+   then
+      arg2=$2
+   fi
+   if [[ ! -r $arg2 ]]
+   then
+      echo "./stats: read error $arg2" 1>&2
+      exit 1
+   fi
+
+#if statement evaluates stdin input 
+#outputs error for bad form
+if [[ $arg1 == -r* ]]
+then
+   count_rows $arg2
+   count_cols $arg2
+   echo -e "Average\tMedian" >> $output
+   calc_rows $arg2
+   cat $output
+elif [[ $arg1 == -c* ]]
+then
+   count_rows $arg2
+   count_cols $arg2
+   echo -e "Averages:" >> $output
+   calc_cols $arg2
+   echo "" >> $output
+   col_med $arg2
+   cat $output
+else
+   echo "stats {-rows | -cols} [file_name]" 1>&2
+   exit 1
+fi
+
+if [[ "$#" = "1" ]]
+then
+   rm -f $arg2
+fi
+
+rm -f $num
+rm -f $file
+rm -f $output
+
